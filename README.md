@@ -7,6 +7,7 @@
 📂 **Dataset:** [Telco Customer Churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn) (Kaggle, IBM sample dataset)
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
+![Tests](https://github.com/haseeb774/Churn-guard-with-recomendations-/actions/workflows/tests.yml/badge.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-ML-orange)
 ![MLflow](https://img.shields.io/badge/MLflow-Tracking-0194E2)
@@ -111,6 +112,20 @@ All experiments are tracked in **MLflow** (params, metrics, and model artifacts 
 **Test set performance held up close to validation** (ROC-AUC 0.835, F1 0.613), indicating the model generalizes rather than overfitting to validation.
 
 **Metric choice rationale:** Accuracy alone is misleading on a 27%-positive imbalanced target — a model predicting "no churn" for everyone would still score ~73% accuracy. The threshold was instead tuned to maximize **F1**, and **recall (0.75)** was prioritized in interpretation, because the business cost of missing a churner (lost customer, lost revenue) is higher than the cost of a false alarm (an unnecessary retention offer).
+
+### Business Impact (Estimated)
+
+The base rate of churn in this dataset is **26.5%** — meaning a retention team blanket-targeting every customer would spend the majority of their budget on customers who were never going to leave. Assuming a modest **$50 retention offer cost** per customer (a discount, credit, or incentive — figure chosen as a conservative, easily-defensible placeholder):
+
+| Strategy | Customers targeted | Estimated cost |
+|---|---|---|
+| Blanket offer to entire base | 7,032 | $351,600 |
+| Targeted to High/Critical risk tier only | 2,828 | $141,400 |
+| **Estimated savings** | — | **$210,200 (60% reduction)** |
+
+This isn't free precision — the model's flagged group has a **51.7% precision** on the test set, meaning roughly half of flagged customers don't actually churn. But that's still a **~1.95x concentration** of actual churners compared to targeting randomly at the 26.5% base rate, so retention spend lands on genuine risk roughly twice as often as an untargeted approach. With an average customer worth **$64.76/month** in recurring revenue, retaining even a modest number of the ~1,386 "Critical" customers more than offsets the cost of the offers themselves within the first month or two.
+
+*(These figures are illustrative estimates based on dataset statistics and a placeholder offer cost, not a validated business case — a production rollout would need real retention-offer cost data and an A/B test to confirm actual conversion lift, as noted in Limitations below.)*
 
 > 📊 Full exploratory analysis — distribution plots, correlation heatmaps, churn-by-segment breakdowns — is in [`notebook/eda.ipynb`](notebook/eda.ipynb).
 
