@@ -14,12 +14,15 @@ Run locally:
 """
 
 import pandas as pd
+import numpy as np
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+import shap
 
 from src.pipeline import ChurnPipeline
 from src.simulate import simulate_batch
+from src.data_transform import Datatransform
 
 st.set_page_config(
     page_title="Churn Intelligence",
@@ -69,6 +72,41 @@ def load_raw():
 def score_customers(raw_df: pd.DataFrame) -> pd.DataFrame:
     pipeline = load_pipeline()
     return pipeline.run(raw_df.drop(columns=["Churn"], errors="ignore"))
+
+
+@st.cache_resource(show_spinner="Preparing explainability engine...")
+def build_shap_explainer(_raw_df: pd.DataFrame):
+    """
+    Builds a model-agnostic SHAP explainer once per session, using
+    predict_proba directly so it works whether the saved artifact is a
+    bare estimator or a Pipeline with internal preprocessing.
+
+    A small random background sample (not the full base) keeps this fast
+    -- SHAP only needs a representative reference distribution, not every
+    row, and Logistic Regression scoring is cheap regardless.
+    """
+    pipeline = load_pipeline()
+    model = pipeline.predictor.model
+    feature_order = pipeline.predictor.features
+
+    encoded = Datatransform(data=_raw_df.drop(columns=["Churn"], errors="ignore")).encode()
+    encoded = encoded.drop(columns=["Churn"], errors="ignore")
+    encoded = encoded[feature_order]
+
+    background = encoded.sample(min(100, len(encoded)), random_state=42)
+
+    explainer = shap.Explainer(model.predict_proba, background)
+    return explainer, feature_order
+
+
+def get_encoded_row(raw_row: pd.DataFrame, feature_order: list) -> pd.DataFrame:
+    """Encodes a single raw-schema customer row into model feature space."""
+    encoded = Datatransform(data=raw_row).encode()
+    encoded = encoded.drop(columns=["Churn"], errors="ignore")
+    # Reindex to guarantee column order/presence matches training-time schema
+    # (e.g. if this customer's InternetService one-hot column didn't appear)
+    encoded = encoded.reindex(columns=feature_order, fill_value=0)
+    return encoded
 
 
 def risk_badge(tier: str) -> str:
@@ -252,13 +290,51 @@ with tab_detail:
                 st.write(f"- **{field}:** {row[field]}")
 
     with colR:
-        st.write("**Why this customer is at risk**")
+        st.write("**Why this customer is at risk** _(rule-based)_")
         drivers = row["risk_drivers"]
         if isinstance(drivers, list) and drivers:
             for d in drivers:
                 st.markdown(f"- {d}")
         else:
             st.write("No major risk drivers detected.")
+
+        st.write("**What actually drove the model's score** _(SHAP)_")
+        is_base_customer = selected_id in raw["customerID"].astype(str).values
+        if not is_base_customer:
+            st.caption(
+                "SHAP explanation is only available for customers from the "
+                "base dataset in this demo (not simulated events)."
+            )
+        else:
+            try:
+                explainer, feature_order = build_shap_explainer(raw)
+                raw_row = raw[raw["customerID"].astype(str) == selected_id]
+                encoded_row = get_encoded_row(raw_row, feature_order)
+
+                shap_values = explainer(encoded_row)
+                # predict_proba has 2 outputs (class 0, class 1) -- take churn=1
+                values = shap_values.values[0, :, 1] if shap_values.values.ndim == 3 else shap_values.values[0]
+
+                shap_df = pd.DataFrame({
+                    "feature": feature_order,
+                    "impact": values,
+                }).sort_values("impact", key=abs, ascending=True).tail(8)
+
+                fig_shap = px.bar(
+                    shap_df, x="impact", y="feature", orientation="h",
+                    color=shap_df["impact"] > 0,
+                    color_discrete_map={True: ACCENT, False: SAFE},
+                    labels={"impact": "Impact on churn probability", "feature": ""},
+                )
+                fig_shap.update_layout(showlegend=False, plot_bgcolor="white", height=320)
+                st.plotly_chart(fig_shap, use_container_width=True)
+                st.caption(
+                    "Red bars push this customer's churn probability up; green bars pull it down. "
+                    "Computed live via SHAP against the trained model -- a model-grounded check "
+                    "against the rule-based drivers above."
+                )
+            except Exception as e:
+                st.caption(f"SHAP explanation unavailable for this customer ({e}).")
 
         st.write("**Recommended retention actions**")
         recs = row["recommendations"]

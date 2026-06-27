@@ -1,5 +1,5 @@
+numpy>=2.4.0,<2.5.0
 pandas
-numpy 
 matplotlib
 scikit-learn
 seaborn
@@ -18,5 +18,6 @@ docker
 optuna
 dvc
 catboost
-shap
+numba>=0.61.0
+shap>=0.46.0
 google-genai

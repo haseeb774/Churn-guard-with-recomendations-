@@ -164,11 +164,33 @@ Raw customer CSV
 
 ---
 
+## Explainability: SHAP vs. Rule-Based Drivers
+
+The dashboard's Customer Detail tab shows two independent explanations side by side: the rule-based risk drivers used for the recommendation engine, and a live SHAP explanation computed directly against the trained model (`shap.Explainer` wrapping `predict_proba`, cached per session, recomputed per selected customer).
+
+**High-risk example** — customer `7590-VHVEG`, 1-month tenure, month-to-month contract, 83.1% churn probability:
+
+| Rule-based drivers | SHAP top drivers (impact direction) |
+|---|---|
+| Month-to-month contract, no online security/tech support, electronic check payment, recent charge spike | `ContractRisk`, `NewHighRisk`, `tenure`, `MonthlyCharges`, `InternetService_Fiber optic` — all pushing risk **up** |
+
+The two methods agree closely here, which is the result you want: the heuristics aren't just plausible-sounding, they're tracking the same signal the model actually learned.
+
+**Low-risk example** — customer `3841-NFECX`, 71-month tenure, 12.4% churn probability:
+
+The rule-based list returns only a single driver ("senior citizen segment"), while SHAP surfaces a fuller picture — `ContractLength`, `AvgMonthlySpend`, `CLV_proxy`, `tenure`, and `ContractRisk` all pulling risk **down**, consistent with a long-tenured, long-contract customer.
+
+**An honest finding, not a hidden one:** for the high-risk customer above, the engineered `RiskScore` feature — built specifically as a hand-crafted risk heuristic — shows up in SHAP as pulling probability **down**, the opposite of its intended direction. This suggests the model treats `RiskScore` as redundant once it has access to the raw underlying signals (contract type, tenure, payment method) it was built from, rather than the engineered summary adding new information. Surfacing this rather than smoothing it over is the point of running both explanation methods side by side: the rule-based panel is good for clear, consistent customer-facing language, while SHAP is the check on whether the model agrees, and it occasionally disagrees in informative ways.
+
+---
+
 ## Tech Stack
 
 - **Modeling:** scikit-learn, XGBoost, CatBoost
 - **Hyperparameter tuning:** Optuna
 - **Experiment tracking:** MLflow
+- **Explainability:** SHAP
+- **Testing:** pytest (21 unit tests covering data cleaning, feature engineering, encoding edge cases, and pipeline orchestration — run with `pytest tests/ -v`)
 - **Serving/UI:** Streamlit, Plotly
 - **Data processing:** pandas, NumPy
 
@@ -220,7 +242,7 @@ streamlit run streamlit_app.py
 - **Recommendation logic is rule-based**, not learned — it's interpretable and fast to ship, but a logical next step is testing whether a learned policy (e.g., uplift modeling) recommends better actions than the heuristic mapping.
 - **No A/B validation loop** — the dashboard recommends actions but doesn't yet close the loop on whether those actions actually reduced churn for the customers they were applied to.
 - **Single dataset, single domain** — generalizing the pipeline to other churn domains (SaaS, banking) would require revisiting the feature engineering, since it's currently tailored to telecom-specific columns (contract type, internet service, etc.).
-- Planned: SHAP-based per-prediction explanations as a more rigorous alternative/complement to the current rule-based risk drivers.
+- **SHAP explanations currently scoped to base-dataset customers only** in the live demo (not simulated events in the Simulate Activity tab) — extending this to simulated customers is a natural next step.
 
 ---
 
