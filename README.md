@@ -1,4 +1,4 @@
-![Tests](https://github.com/haseeb774/churn-guard/actions/workflows/tests.yml/badge.svg)
+![Tests](https://github.com/haseeb774/Churn-guard-with-recomendations-/actions/workflows/tests.yml/badge.svg)
 # ChurnGuard — Predictive Churn Intelligence & Retention Engine
 
 **Predicts which telecom customers are about to leave, explains *why*, and recommends the specific retention action to take — all in one interactive dashboard.**
